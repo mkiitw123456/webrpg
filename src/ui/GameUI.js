@@ -101,7 +101,7 @@ export default class GameUI {
     this.scene.controls.capture = null;
     this.scene.controls.reset(); this.panel = panel; this.renderPanel();
   }
-  close() { this.panel = null; this.root.querySelector('#rpg-modal').hidden = true; this.scene.controls.capture = null; this.scene.controls.reset(); }
+  close() { this.panel = null; this.root.querySelector('#rpg-modal').hidden = true; this.scene.input.enabled = true; this.scene.controls.capture = null; this.scene.controls.reset(); }
   onSnapshot() {
     const s = this.scene.snapshot, r = this.scene.rpg;
     // 成員位置與 HP 不影響表單，避免快照把使用者正在填的欄位重建。
@@ -112,6 +112,8 @@ export default class GameUI {
     this.panelSignature = stable;
   }
   renderPanel() {
+    // DOM dialogs must block world hit targets (NPCs and building entrances).
+    this.scene.input.enabled = false;
     const modal = this.root.querySelector('#rpg-modal');
     modal.hidden = false;
     const body = ['forge', 'casino'].includes(this.panel) ? workshopPanel(this) : ({ equipment: () => this.equipment(), inventory: () => this.inventory(), skills: () => this.skills(), party: () => this.party(), trade: () => this.trade(), settings: () => this.settings() })[this.panel]?.() || '';
