@@ -1,3 +1,4 @@
+import { CLASSES, shopBuyPrice, shopSellPrice } from '../shared/classes.js';
 import { coinClick } from './CoinUI.js';
 import { ITEMS, SKILLS } from '../systems/RPGState.js';
 import { ACTION_NAMES } from '../systems/Controls.js';
@@ -7,7 +8,7 @@ import { itemIcon } from '../assets/itemIcons.js';
 import { workshopPanel, workshopSubmit, updateWorkshop } from './WorkshopUI.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const titles = { equipment: '穿戴裝備', inventory: '背包', skills: '劍士技能書', party: '組隊與副本', trade: '物品贈送', forge: '強化工坊', casino: '金幣遊戲館', settings: '按鍵與音效設定' };
+const titles = { equipment: '穿戴裝備', inventory: '背包', skills: '職業技能書', party: '組隊與副本', shop:'武器裝備商店', trade: '物品贈送', forge: '強化工坊', casino: '金幣遊戲館', settings: '按鍵與音效設定' };
 const icon = id => `<img class="pixel-icon" src="${itemIcon(id)}" alt="${escape(ITEMS[id]?.name || (id === 'potion' ? '恢復藥水' : '金幣'))}" width="48" height="48">`;
 
 export default class GameUI {
@@ -21,7 +22,7 @@ export default class GameUI {
         <div class="wallet"><strong id="gold"></strong><small id="quest"></small></div>
       </div>
       <div class="action-row"><div class="hotbar">
-        ${Object.entries(SKILLS).map(([id, s]) => `<button class="skill-button ${id}" data-action="${id}"><kbd data-key="${id}"></kbd><strong>${s.name}</strong><small>${s.mp ? s.mp + ' MP' : '連續普攻'}</small><span class="cooldown"></span></button>`).join('')}
+        ${Object.entries(scene.rpg.skills).map(([id, s]) => `<button class="skill-button ${id}" data-action="${id}"><kbd data-key="${id}"></kbd><strong>${s.name}</strong><small>${s.mp ? s.mp + ' MP' : '連續普攻'}</small><span class="cooldown"></span></button>`).join('')}
         <button data-action="potion" class="skill-button potion"><kbd data-key="potion"></kbd><strong>恢復藥水</strong><small id="potions"></small></button>
       </div><span class="party-status" id="party-status">村莊集合中</span></div>
       <nav class="menu-buttons" aria-label="冒險選單">${Object.keys(titles).map(id => `<button data-panel="${id}"><kbd data-key="${id}"></kbd> ${titles[id].replace('劍士', '').replace('按鍵與音效設定', '設定')}</button>`).join('')}</nav>
@@ -41,6 +42,7 @@ export default class GameUI {
       }
     }, { signal: this.abort.signal });
     this.root.addEventListener('input', event => {
+      if(event.target.id==='music-volume')scene.audio.setMusicVolume(Number(event.target.value)/100);
       if (event.target.id === 'sound-volume') {
         scene.audio.setVolume(Number(event.target.value) / 100);
         this.root.querySelector('#volume-value').textContent = `${Math.round(scene.audio.volume * 100)}%`;
@@ -55,9 +57,12 @@ export default class GameUI {
   click(event) {
     const b = event.target.closest('button');
     if (!b || b.disabled) return;
-    const d = b.dataset;
+    const d = b.dataset;this.scene.audio.sfx('click');
     rouletteClick(this, d);
     coinClick(this, d);
+    if(d.buy)this.send('shop-buy',{item:d.buy});
+    if(d.sell)this.send('shop-sell',{item:d.sell});
+    if(b.hasAttribute('data-logout')){this.scene.client.destroy();sessionStorage.removeItem('little-leaf-session');location.reload();return;}
     if (d.action) this.scene.performAction(d.action);
     if (d.panel) this.toggle(d.panel);
     if (d.forgeItem) { this.forgeItem = d.forgeItem; this.panel = 'forge'; this.renderPanel(); }
@@ -104,9 +109,10 @@ export default class GameUI {
   close() { this.panel = null; this.root.querySelector('#rpg-modal').hidden = true; this.scene.input.enabled = true; this.scene.controls.capture = null; this.scene.controls.reset(); }
   onSnapshot() {
     const s = this.scene.snapshot, r = this.scene.rpg;
+    for(const [id,skill]of Object.entries(r.skills)){const b=this.root.querySelector('[data-action="'+id+'"]');b.querySelector('strong').textContent=skill.name;b.querySelector('small').textContent=skill.passive?'空中再按跳躍':skill.mp?skill.mp+' MP':'普通攻擊';}
     // 成員位置與 HP 不影響表單，避免快照把使用者正在填的欄位重建。
     const stable = JSON.stringify([r.inventory, r.equipment, r.enhancements, r.potions, r.level, r.ranks, r.skillPoints,
-      s.party && [s.party.id, s.party.leader, s.party.members.map(p => [p.id, p.name, p.online])],
+      r.classId, this.panel==='shop'?r.gold:null, s.party && [s.party.id, s.party.leader, s.party.members.map(p => [p.id, p.name, p.online])],
       s.invites, s.trades, s.peers.map(p => [p.id, p.name, p.partyId]), s.self.name, s.self.room]);
     if (stable !== this.panelSignature && this.panel && !['settings', 'forge', 'casino'].includes(this.panel)) this.renderPanel();
     this.panelSignature = stable;
@@ -116,7 +122,7 @@ export default class GameUI {
     this.scene.input.enabled = false;
     const modal = this.root.querySelector('#rpg-modal');
     modal.hidden = false;
-    const body = ['forge', 'casino'].includes(this.panel) ? workshopPanel(this) : ({ equipment: () => this.equipment(), inventory: () => this.inventory(), skills: () => this.skills(), party: () => this.party(), trade: () => this.trade(), settings: () => this.settings() })[this.panel]?.() || '';
+    const body = ['forge', 'casino'].includes(this.panel) ? workshopPanel(this) : ({ equipment: () => this.equipment(), inventory: () => this.inventory(), skills: () => this.skills(), party: () => this.party(), shop:()=>this.shop(), trade: () => this.trade(), settings: () => this.settings() })[this.panel]?.() || '';
     modal.innerHTML = `<section class="${this.panel === 'casino' ? 'casino-dialog' : ''}" role="dialog" aria-modal="true" aria-label="${titles[this.panel]}"><div class="panel-heading"><div><small>冒險者手冊 · ${this.scene.room === 'village' ? '村莊安全區' : '副本戰鬥持續進行'}</small><h2>${titles[this.panel]}</h2></div><button data-close aria-label="關閉">關閉 ×</button></div><p id="panel-message" role="status"></p>${body}<p class="panel-hint">Esc 關閉 · 設定儲存在此瀏覽器 · 角色由伺服器管理</p></section>`;
     this.refreshKeys();
     updateWorkshop(this, this.scene.client?.now || Date.now());
@@ -136,7 +142,11 @@ export default class GameUI {
   }
   skills() {
     const s = this.scene.rpg;
-    return `<p class="panel-hint">可用技能點 <b>${s.skillPoints}</b> · 每次升級 +1 點</p><div class="item-list">${Object.entries(SKILLS).map(([id, k]) => `<div class="item-row"><kbd data-key="${id}"></kbd><div><strong>${k.name} ${id === 'attack' ? '' : `Lv.${s.ranks[id]} / 5`}</strong><small>${Math.round(s.multiplier(id) * 100)}% 傷害 · ${k.mp} MP · ${k.cooldown / 1000}s 冷卻</small></div>${id !== 'attack' ? `<button data-upgrade="${id}" ${!s.skillPoints || s.ranks[id] >= 5 ? 'disabled' : ''}>升級 +1</button>` : ''}</div>`).join('')}</div>`;
+    return `<p class="panel-hint">可用技能點 <b>${s.skillPoints}</b> · 每次升級 +1 點</p><div class="item-list">${Object.entries(this.scene.rpg.skills).map(([id, k]) => `<div class="item-row"><kbd data-key="${id}"></kbd><div><strong>${k.name} ${id === 'attack' ? '' : `Lv.${s.ranks[id]} / 5`}</strong><small>${k.passive?'空中再按一次跳躍，向面向方向衝刺；落地重置':Math.round(s.multiplier(id)*100)+'% 傷害 · '+k.mp+' MP · '+k.cooldown/1000+'s 冷卻'}</small></div>${id !== 'attack' && !k.passive ? `<button data-upgrade="${id}" ${!s.skillPoints || s.ranks[id] >= 5 ? 'disabled' : ''}>升級 +1</button>` : ''}</div>`).join('')}</div>`;
+  }
+  shop() {
+    const s=this.scene.rpg;if(this.scene.room!=='village')return '<p>請回村莊交易。</p>';
+    return '<p>新手武器免費補領（每款限一件），不怕爆裝後無武器可用。免費武器不可販賣；已穿戴或交易中的物品需先解除。</p><h3>購買 · 持有 '+s.gold+' 金幣</h3>'+Object.entries(ITEMS).filter(([id,item])=>!item.classId||item.classId===s.classId).map(([id,item])=>'<div class="item-row">'+icon(id)+'<div><strong>'+item.name+'</strong><small>'+shopBuyPrice(item)+' 金幣</small></div><button data-buy="'+id+'" '+(s.inventory.includes(id)||s.gold<shopBuyPrice(item)?'disabled':'')+'>'+(item.starter?'免費領取':'購買')+'</button></div>').join('')+'<h3>販賣背包装備</h3>'+s.inventory.filter(id=>!ITEMS[id].starter&&!Object.values(s.equipment).includes(id)).map(id=>'<div class="item-row">'+icon(id)+'<span>'+ITEMS[id].name+' +'+(s.enhancements[id]||0)+'</span><button data-sell="'+id+'">出售 '+shopSellPrice(ITEMS[id],s.enhancements[id]||0)+' 金幣</button></div>').join('');
   }
   party() {
     const data = this.scene.snapshot;
@@ -163,13 +173,13 @@ export default class GameUI {
       ${this.scene.room !== 'village' ? '<p class="panel-hint">請回村莊進行交易。</p>' : ''}`;
   }
   settings() {
-    return `<p class="panel-hint">點擊按鍵後按下新鍵。重複按鍵會提示衝突，Esc 固定為關閉／取消。設定會保留在此瀏覽器。</p><div id="binding-message" role="status"></div><div class="binding-grid">${Object.keys(ACTION_NAMES).map(id => `<div><span>${ACTION_NAMES[id]}</span><button data-bind="${id}">${this.scene.controls.label(id)}</button></div>`).join('')}</div><button class="primary-button" data-reset-keys>恢復預設按鍵</button><div class="sound-setting"><label for="sound-volume">音效音量 <b id="volume-value">${Math.round(this.scene.audio.volume * 100)}%</b></label><input id="sound-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.volume * 100)}"><button data-test-audio>試聽打擊音效</button><p>包含攻擊命中、輪盤啟動與結算；受傷不播放音效。設為 0% 即靜音。</p></div>`;
+    return `<button data-logout>登出帳號</button><label>背景音樂音量<input id="music-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.musicVolume*100)}"></label><a href="/audio/CREDITS.md" target="_blank" rel="noopener">音樂與音效來源（CC0）</a><p class="panel-hint">點擊按鍵後按下新鍵。重複按鍵會提示衝突，Esc 固定為關閉／取消。設定會保留在此瀏覽器。</p><div id="binding-message" role="status"></div><div class="binding-grid">${Object.keys(ACTION_NAMES).map(id => `<div><span>${ACTION_NAMES[id]}</span><button data-bind="${id}">${this.scene.controls.label(id)}</button></div>`).join('')}</div><button class="primary-button" data-reset-keys>恢復預設按鍵</button><div class="sound-setting"><label for="sound-volume">音效音量 <b id="volume-value">${Math.round(this.scene.audio.volume * 100)}%</b></label><input id="sound-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.volume * 100)}"><button data-test-audio>試聽打擊音效</button><p>包含攻擊命中、輪盤啟動與結算；受傷不播放音效。設為 0% 即靜音。</p></div>`;
   }
   update(now) {
     updateWorkshop(this, now);
     const s = this.scene.rpg, data = this.scene.snapshot, online = this.scene.client?.connected;
     const set = (selector, text) => { const e = this.root.querySelector(selector); if (e.textContent !== String(text)) e.textContent = text; };
-    set('#level', s.level); set('#hero-name', data?.self.name || '見習劍士'); set('#connection', online ? '● 已連線' : '○ 離線');
+    set('#level', s.level); set('#hero-name', (data?.self.name || '見習劍士')+' · '+CLASSES[s.classId]); set('#connection', online ? '● 已連線' : '○ 離線');
     set('#attributes', `攻擊 ${s.attack} / 防禦 ${s.defense}`);
     for (const [key, value, max] of [['hp', s.hp, s.maxHp], ['mp', s.mp, s.maxMp], ['exp', s.exp, s.nextExp]]) {
       this.root.querySelector(`.${key} i`).style.width = `${100 * value / max}%`;
@@ -182,9 +192,9 @@ export default class GameUI {
     const gifts = data?.trades.filter(t => t.to === data.self.id).length || 0;
     const alert = `${invitations ? `<button data-panel="party">${invitations} 個組隊邀請，點此查看</button>` : ''}${gifts ? `<button data-panel="trade">${gifts} 筆物品贈送，點此查看</button>` : ''}`;
     if (this.alertHTML !== alert) { this.root.querySelector('#social-alert').innerHTML = alert; this.alertHTML = alert; }
-    for (const [id, skill] of Object.entries(SKILLS)) {
+    for (const [id, skill] of Object.entries(s.skills)) {
       const b = this.root.querySelector(`[data-action="${id}"]`), remaining = Math.max(0, s.cooldowns[id] - now);
-      b.disabled = !online || !!this.panel || s.hp <= 0 || remaining > 0 || s.mp < skill.mp || now < s.globalCooldown;
+      b.disabled = !online || !!this.panel || skill.passive || s.hp <= 0 || remaining > 0 || s.mp < skill.mp || now < s.globalCooldown;
       b.querySelector('.cooldown').textContent = remaining > 0 ? `${(remaining / 1000).toFixed(1)}s` : '';
     }
     this.root.querySelector('[data-action="potion"]').disabled = !online || !!this.panel || !s.potions || s.hp <= 0 || now < s.potionReady;

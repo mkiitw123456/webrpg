@@ -3,20 +3,21 @@ import { ITEMS } from '../src/systems/RPGState.js';
 import { forgeRules } from '../src/shared/progression.js';
 
 export default class Forge {
-  constructor(world, rng = randomInt) { this.world = world; this.rng = rng; }
+  constructor(world, rng = randomInt) { this.world = world; this.rng = rng; this.results = new Map(); }
   start(p, item, now) {
     this.world.village(p);
     if (p.forge?.status === 'running') throw new Error('正在強化中，請等待結果。');
     if (!Object.hasOwn(ITEMS, item) || !p.rpg.inventory.includes(item) || this.world.locked(p, item)) throw new Error('裝備不存在或正在交易。');
     const level = p.rpg.enhancements[item] || 0, rules = forgeRules(ITEMS[item], level);
-    if (level >= 10) throw new Error('裝備已達 +10 上限。');
+    if (level >= 15) throw new Error('裝備已達 +15 上限。');
     if (p.rpg.gold < rules.cost) throw new Error(`金幣不足，需要 ${rules.cost} 金幣。`);
+    this.results.set(p.id, {success:this.rng(0,100)<rules.successRate, destroyed:this.rng(0,100)<rules.destroyRate});
     p.rpg.gold -= rules.cost;
     p.forge = { id: randomUUID(), item, level, cost: rules.cost, rules, phase: 'upgrade', success: 0, failure: 0, segments: [], status: 'running', nextTick: now };
   }
   finish(p, status) {
     const f = p.forge;
-    f.status = status;
+    f.status = status; this.results.delete(p.id);
     if (status === 'success') p.rpg.enhancements[f.item] = f.level + 1;
     if (status === 'destroyed') {
       p.rpg.inventory = p.rpg.inventory.filter(id => id !== f.item);
@@ -34,7 +35,7 @@ export default class Forge {
         const won = f.step.outcome === 'top'; f.step.outcome = null;
         if (f.phase === 'risk') { this.finish(p, won ? 'failure' : 'destroyed'); continue; }
         if (won) { this.finish(p, 'success'); continue; }
-        if (f.level <= 6) { this.finish(p, 'failure'); continue; }
+        if (!f.rules.destroyRate) { this.finish(p, 'failure'); continue; }
         f.pendingRisk = true;
       }
       if (now < f.nextTick) continue;
@@ -44,8 +45,12 @@ export default class Forge {
       const risk = f.phase === 'risk';
       const base = this.rng(risk ? 8 : f.rules.successMin, risk ? 23 : f.rules.successMax + 1);
       const boosted = !risk && this.rng(0, 10) === 0;
-      const a = base * (boosted ? 2 : 1), b = this.rng(risk ? 5 : f.rules.failureMin, risk ? 19 : f.rules.failureMax + 1);
-      const topTime = (100 - f.success) / a, bottomTime = (100 - f.failure) / b;
+      let a = base * (boosted ? 2 : 1), b = this.rng(risk ? 5 : f.rules.failureMin, risk ? 19 : f.rules.failureMax + 1);
+      const result=this.results.get(p.id), topWinner=risk?!result.destroyed:result.success;
+      // The losing bar stays below the finish line; RNG outcome sets exact odds.
+      if(topWinner)b=Math.min(b,Math.max(0,(96-f.failure)*0.55));
+      else a=Math.min(a,Math.max(0,(96-f.success)*0.55));
+      const topTime = a ? (100 - f.success) / a : Infinity, bottomTime = b ? (100 - f.failure) / b : Infinity;
       const fraction = Math.min(1, topTime, bottomTime), fromSuccess = f.success, fromFailure = f.failure;
       f.success = Math.min(100, f.success + a * fraction); f.failure = Math.min(100, f.failure + b * fraction);
       const crossed = topTime <= 1 || bottomTime <= 1;

@@ -1,3 +1,4 @@
+import { CLASS_SKILLS } from '../shared/classes.js';
 import { animatePool } from '../ui/PoolUI.js';
 import { animateCoin } from '../ui/CoinUI.js';
 import { animateForge } from '../ui/ForgeUI.js';
@@ -77,6 +78,7 @@ export default class GameScene extends Phaser.Scene {
     this.mapSubtitle.setText(village ? '安全區 · 組隊集合 · 物品贈送' : `獨立狩獵地圖 · ${room.slice(0, 8)} · 選單不會暫停戰鬥`);
     document.getElementById('location-label').textContent = village ? '小葉村 / 冒險者廣場' : map.name + ' / 隊伍專屬副本';
     if (village) {
+      const shopNpc=this.add.sprite(300,448,'player-0').setScale(3).setTint(0xa1d6ff).setInteractive({useHandCursor:true});shopNpc.on('pointerdown',()=>this.ui.toggle('shop'));this.mapViews.push(shopNpc,this.add.text(300,385,'裝備商人\n免費新手武器',{fontSize:'12px',color:'#294d45',align:'center'}).setOrigin(0.5));
       this.house(190, '冒險者公會', 0x976047);
       this.house(560, '旅人小屋', 0x608579);
       this.house(800, '幸運葉 · 金幣遊戲館', 0x74608c);
@@ -107,10 +109,17 @@ export default class GameScene extends Phaser.Scene {
     this.mapViews.push(g, this.add.text(x, 344, name, { fontSize: '14px', color: '#fff6cb', stroke: '#56482f', strokeThickness: 3 }).setOrigin(0.5));
   }
   receive(message) {
+    if(message.type==='ui-sound'){this.audio.sfx(message.sound);return;}
     if (message.type === 'notice') return this.ui.message(message.text);
     if (message.type === 'state') {
       const previous = this.snapshot;
       this.snapshot = message;
+      this.audio.setMusic(message.mapId);
+      if(previous&&this.ui.panel==='forge'){
+        const f=message.forge,old=previous.forge;
+        if(f?.step&&f.step.starts!==old?.step?.starts)this.audio.sfx('step');
+        if(f&&f.status!=='running'&&old?.status==='running')this.audio.sfx(f.status);
+      }
       Object.assign(this.rpg, message.self.rpg);
       if (this.room !== message.self.room) { this.buildMap(message.self.room); this.ui.close(); }
       if (!previous || previous.self.teleport !== message.self.teleport) {
@@ -124,8 +133,8 @@ export default class GameScene extends Phaser.Scene {
       this.syncViews(message); this.ui.onSnapshot(); return;
     }
     if (message.room !== this.room) return;
-    if (message.type === 'attack') {
-      this.attackEffect(message.skill, message.x, message.y, message.direction);
+    if (message.type === 'attack' || message.type === 'projectile-hit') {
+      if(message.type==='attack')this.attackEffect(message.skill, message.x, message.y, message.direction,message.classId);
       if (message.player === this.client.id) this.player.attackUntil = this.time.now + 230;
       for (const hit of message.hits) this.floatText(hit.x, hit.y - 38, `${hit.damage}`);
       if (message.hits.length && Math.abs(message.x - this.player.x) < 650) this.audio.hit(message.skill);
@@ -152,6 +161,8 @@ export default class GameScene extends Phaser.Scene {
       view.weapon.clear();
       if (p.weapon) view.weapon.fillStyle(ITEMS[p.weapon]?.color || 0xffffff).fillRect(p.x + (p.flipX ? -23 : 20), p.y - 20, 5, 30).fillStyle(0xd9b974).fillRect(p.x + (p.flipX ? -28 : 15), p.y + 8, 15, 4);
     });
+    this.projectileViews ||= new Map();
+    reconcile(this.projectileViews,state.projectiles||[],b=>({sprite:this.add.graphics().setDepth(9)}),(v,b)=>{const g=v.sprite;g.clear().setPosition(b.x,b.y).setScale(b.direction,1).fillStyle(b.color);if(b.kind==='arrow'){g.fillRect(-18,-2,32,4).fillTriangle(15,-7,26,0,15,7);}else if(b.kind==='star'){g.fillTriangle(-10,-10,10,10,-10,10).fillTriangle(-10,-10,10,-10,10,10).fillStyle(0xffffff).fillRect(-3,-3,6,6);}else g.fillCircle(0,0,b.kind==='fire'?13:10).fillStyle(0xffffff).fillCircle(-3,-3,4);});
     reconcile(this.monsters, state.enemies.filter(e => e.hp > 0), e => ({ sprite: new Enemy(this, e) }), (view, e) => view.sprite.sync(e));
     reconcile(this.dropViews, state.drops, d => {
       const key = `drop-${d.item || (d.potion ? 'potion' : 'gold')}`;
@@ -165,7 +176,7 @@ export default class GameScene extends Phaser.Scene {
     animateCoin(this.ui, this.client?.now || Date.now());
     animatePool(this.ui, this.client?.now || Date.now());
     animateForge(this.ui, this.client?.now || Date.now());
-    for (const panel of ['equipment', 'inventory', 'skills', 'party', 'trade', 'settings', 'forge', 'casino']) if (this.controls.just(panel)) this.ui.toggle(panel);
+    for (const panel of ['equipment', 'inventory', 'skills', 'party', 'trade', 'settings', 'forge', 'casino', 'shop']) if (this.controls.just(panel)) this.ui.toggle(panel);
     if (this.controls.just('escape')) this.ui.close();
     if (this.client?.connected && !this.dead) {
       if (!this.ui.panel) {
@@ -195,8 +206,10 @@ export default class GameScene extends Phaser.Scene {
     const text = this.add.text(x, y, message, { fontFamily: 'Microsoft JhengHei, sans-serif', fontSize: '23px', fontStyle: 'bold', color, stroke: '#315347', strokeThickness: 4 }).setOrigin(0.5).setDepth(20);
     this.tweens.add({ targets: text, y: y - 55, alpha: 0, duration: 850, onComplete: () => text.destroy() });
   }
-  attackEffect(id, x, y, direction) {
-    const g = this.add.graphics().setPosition(x, y).setDepth(9), skill = SKILLS[id];
+  attackEffect(id, x, y, direction,classId='warrior') {
+    const g = this.add.graphics().setPosition(x, y).setDepth(9), skill = (CLASS_SKILLS[classId]||SKILLS)[id];
+    if (skill?.projectile) {g.destroy();return;}
+    if(classId==='mage'&&id==='spin'){g.lineStyle(6,skill.color).strokeEllipse(0,0,850,350);for(let i=-360;i<=360;i+=90)g.fillStyle(0xffffcc,0.6).fillRect(i,-170,12,340);this.tweens.add({targets:g,alpha:0,duration:650,onComplete:()=>g.destroy()});return;}
     if (!skill) { g.destroy(); return; }
     g.lineStyle(id === 'attack' ? 7 : 10, skill.color, 0.95);
     if (id === 'spin') g.strokeEllipse(0, 0, 240, 110).lineStyle(3, 0xffffff, 1).strokeEllipse(0, -6, 200, 90);

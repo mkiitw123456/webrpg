@@ -18,7 +18,7 @@
 4. 到 Vercel 的 webrpg 專案 → Settings → Environment Variables，新增 Production 變數 VITE_GAME_SERVER，值為 wss://實際後端網域/multiplayer。
 5. 重新部署 Vercel，進入正式站確認顯示「已連線」。
 
-免費服務會在閒置後休眠，喚醒需要等待；目前遊戲資料存在記憶體，服務重啟會清空進度。正式營運需另處理持久化及常駐資源。
+免費服務會在閒置後休眠，喚醒需要等待。已接 PostgreSQL 保存角色，重啟後重新登入可還原；仍須留意免費資料庫與 Render 流量額度。
 
 可在支援常駐 Node.js 或 Docker 的主機上部署此儲存庫。
 
@@ -31,7 +31,7 @@
 - 網路：公開 HTTPS，允許 WebSocket upgrade；GET / 可檢查服務是否存活。
 - Docker：儲存庫根目錄已有 Dockerfile，主機需將服務流量導到 PORT 指定的埠。
 
-目前角色、物品與金幣只保存在記憶體，部署或重啟後會清空，尚無正式帳號和資料庫。這份設定適合目前版本的連線測試。
+正式後端必須設定 DATABASE_URL（TLS PostgreSQL，僅後端使用），帳號表和角色 checkpoint 會在啟動時建立。角色持久化每 2 秒檢查變動，正常關閉再存一次；異常終止可能回退最近約 2 秒。
 
 ## 3. Vercel
 

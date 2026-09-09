@@ -6,3 +6,5 @@ dist/
 !.env.production
 *.log
 admin-key.txt
+
+.local/

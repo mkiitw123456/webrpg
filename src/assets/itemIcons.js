@@ -10,7 +10,11 @@ export function itemIcon(id) {
   const c = canvas.getContext('2d');
   const r = (x, y, w, h, color) => { c.fillStyle = color; c.fillRect(x, y, w, h); };
   const item = ITEMS[id];
-  if (item?.slot === 'weapon') {
+  if(item?.classId==='archer') {
+    const color='#'+item.color.toString(16).padStart(6,'0');for(let y=3;y<29;y++){const x=10+Math.round(Math.sin((y-3)/26*Math.PI)*10);r(x,y,3,1,color);}r(11,3,1,26,'#f1ead1');r(6,15,20,2,'#896b40');r(24,13,3,6,'#e7f8e6');
+  } else if(item?.classId==='mage') {r(14,10,4,20,'#94724b');r(9,4,14,10,'#325b77');r(11,3,10,10,'#a5e4ff');r(13,4,3,5,'#ffffff');
+  } else if(item?.classId==='rogue') {r(6,12,17,14,'#816795');r(8,13,13,9,'#c2a3de');r(20,6,3,15,'#e3eff5');r(24,9,3,15,'#adbac9');
+  } else if (item?.slot === 'weapon') {
     const color = '#' + item.color.toString(16).padStart(6, '0');
     r(14, 2, 5, 21, '#365345'); r(15, 3, 3, 18, color);
     r(15, 3, 1, 17, id === 'wood' ? '#e1b77c' : '#f3ffef');

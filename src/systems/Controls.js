@@ -1,10 +1,10 @@
 export const DEFAULT_BINDINGS = {
   left: 'ArrowLeft', right: 'ArrowRight', jump: 'Space', attack: 'KeyJ', wave: 'KeyK', spin: 'KeyL',
-  potion: 'KeyR', equipment: 'KeyE', inventory: 'KeyI', skills: 'KeyC', party: 'KeyP', trade: 'KeyT', settings: 'KeyO', forge: 'KeyF', casino: 'KeyB'
+  potion: 'KeyR', equipment: 'KeyE', inventory: 'KeyI', skills: 'KeyC', party: 'KeyP', trade: 'KeyT', settings: 'KeyO', forge: 'KeyF', casino: 'KeyB', shop:'KeyM'
 };
 export const ACTION_NAMES = {
   left: '向左移動', right: '向右移動', jump: '跳躍', attack: '普攻', wave: '翠葉劍氣', spin: '旋風斬',
-  potion: '恢復藥水', equipment: '穿戴裝備', inventory: '背包', skills: '技能書', party: '組隊與副本', trade: '物品贈送', settings: '按鍵與音效設定', forge: '強化工坊', casino: '金幣遊戲館'
+  potion: '恢復藥水', equipment: '穿戴裝備', inventory: '背包', skills: '技能書', party: '組隊與副本', trade: '物品贈送', settings: '按鍵與音效設定', forge: '強化工坊', casino: '金幣遊戲館',shop:'武器裝備商店'
 };
 export function keyLabel(code) { return ({ ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space' })[code] || code.replace(/^Key|^Digit/, ''); }
 export function rebind(bindings, action, code) {

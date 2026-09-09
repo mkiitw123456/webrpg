@@ -18,10 +18,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
   update(time) {
     const grounded = this.body.blocked.down || this.body.touching.down;
-    if (grounded) this.lastGrounded = time;
-    if (this.controls.just('jump')) this.jumpQueued = time;
+    if (grounded) {this.lastGrounded = time;this.airJumpUsed=false;}
+    if (this.controls.just('jump')) {
+      if(!grounded && time-this.lastGrounded>=100 && !this.airJumpUsed && this.scene.rpg.classId==='rogue') {
+        this.airJumpUsed=true; this.setMaxVelocity(500,700);this.setVelocity(this.flipX?-460:460,-330);this.dashUntil=time+250;
+        this.scene.client.send('double-jump');this.scene.audio.hit('wave');
+      } else this.jumpQueued=time;
+    }
     const direction = Number(this.controls.down('right')) - Number(this.controls.down('left'));
-    this.setAccelerationX(direction * 1800);
+    this.setAccelerationX(time<(this.dashUntil||0)?0:direction*1800);
+    if(time>=(this.dashUntil||0))this.setMaxVelocity(250,700);
     if (direction) this.setFlipX(direction < 0);
 
     if (time - this.jumpQueued < 120 && time - this.lastGrounded < 100) {
@@ -53,6 +59,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (!this.scene.rpg.equipment.weapon) return;
     g.setScale(direction, 1).setAlpha(this.alpha);
     g.setRotation(attacking ? direction * 1.15 : direction * 0.2);
+    if(this.scene.rpg.classId==='archer') {g.lineStyle(4,this.scene.weaponColor()).beginPath().arc(0,-10,17,-1.4,1.4).strokePath();g.lineStyle(1,0xffffff).lineBetween(3,-27,3,7);return;}
+    if(this.scene.rpg.classId==='mage') {g.fillStyle(0x795c46).fillRect(-2,-24,4,36);g.fillStyle(this.scene.weaponColor()).fillCircle(0,-25,8);return;}
+    if(this.scene.rpg.classId==='rogue') {g.fillStyle(this.scene.weaponColor()).fillRect(-4,-8,13,14);g.fillStyle(0xffffff).fillTriangle(8,-12,13,-2,8,8);return;}
     g.fillStyle(this.scene.weaponColor()).fillRect(-2, -29, 6, 29);
     g.fillStyle(0xffffff, 0.6).fillRect(-2, -29, 2, 24);
     g.fillStyle(0xf2c46f).fillRect(-8, 0, 18, 4);

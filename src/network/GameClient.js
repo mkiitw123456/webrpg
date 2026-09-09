@@ -11,6 +11,7 @@ export default class GameClient {
     this.connect();
   }
   receive(message) {
+    if(message.type==='auth-error'){this.destroy();sessionStorage.removeItem('little-leaf-session');window.alert(message.text);location.reload();return;}
     if (message.type === 'welcome') {
       this.token = message.token; this.id = message.id;
       try { sessionStorage.setItem('little-leaf-session', this.token); } catch { /* Storage optional. */ }
@@ -33,7 +34,7 @@ export default class GameClient {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: AbortSignal.timeout(5000)
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || '連線暫時中斷');
+    if (!response.ok) {const error=new Error(result.error || '連線暫時中斷');error.status=response.status;throw error;}
     return result;
   }
   async startHTTP() {
@@ -52,6 +53,7 @@ export default class GameClient {
       this.onStatus('已連上小葉村。按組隊建立隊伍，或等待朋友加入。');
       this.poll();
     } catch (error) {
+      if(error.status===401){this.receive({type:'auth-error',text:error.message});return;}
       console.error('Multiplayer connect:', error.message);
       if (!this.closed) { this.onStatus('無法連接多人伺服器，2 秒後重試。'); this.retry = setTimeout(() => this.httpConnect(), 2000); }
     }

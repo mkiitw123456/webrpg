@@ -1,7 +1,8 @@
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID, randomBytes, randomInt } from 'node:crypto';
 import RPGState, { ITEMS, SKILLS } from '../src/systems/RPGState.js';
 import { intersectsAttack } from '../src/shared/world.js';
-import { MONSTERS } from '../src/shared/progression.js';
+import { MONSTERS, scaledMonster } from '../src/shared/progression.js';
+import { CLASSES, shopBuyPrice, shopSellPrice } from '../src/shared/classes.js';
 import Forge from './Forge.js';
 import Casino from './Casino.js';
 import { MAPS } from '../src/shared/maps.js';
@@ -31,7 +32,7 @@ export default class World {
     p.moveAt = now;
     return p;
   }
-  publicPlayer(p) { return { id: p.id, name: p.name, x: p.x, y: p.y, flipX: p.flipX, moving: p.moving, level: p.rpg.level, hp: p.rpg.hp, maxHp: p.rpg.maxHp, weapon: p.rpg.equipment.weapon, armor: p.rpg.equipment.armor, partyId: p.partyId, online: p.online }; }
+  publicPlayer(p) { return { id: p.id, name: p.name, x: p.x, y: p.y, flipX: p.flipX, moving: p.moving, classId:p.rpg.classId, level: p.rpg.level, hp: p.rpg.hp, maxHp: p.rpg.maxHp, weapon: p.rpg.equipment.weapon, armor: p.rpg.equipment.armor, partyId: p.partyId, online: p.online }; }
   snapshot(p, now) {
     const party = this.parties.get(p.partyId);
     const instance = this.instances.get(p.room);
@@ -42,7 +43,8 @@ export default class World {
       invites: [...this.invites.values()].filter(i => i.to === p.id || i.from === p.id),
       trades: [...this.trades.values()].filter(t => t.to === p.id || t.from === p.id),
       forge: p.forge || null, casino: p.room === 'village' ? this.casino.snapshot(p) : null,
-      enemies: instance ? instance.enemies.map(e => ({ id: e.id, index: e.index, kind: e.kind, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, direction: e.direction })) : [],
+      enemies: instance ? instance.enemies.map(e => ({ id: e.id, index: e.index, kind: e.kind, level:e.level, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, direction: e.direction })) : [],
+      projectiles:instance ? (instance.projectiles||[]).filter(b=>now>=b.starts).map(b=>({id:b.id,x:b.x,y:b.y,direction:b.direction,kind:b.skill.projectile,color:b.skill.color})) : [],
       drops: instance ? instance.drops : []
     };
   }
@@ -87,14 +89,33 @@ export default class World {
   }
   command(p, m, now = Date.now()) {
     if (!p.online) return;
+    if(this.persistenceError&&m.type!=='move')throw Error('存檔連線中斷，暫停操作以保護進度。');
     switch (m.type) {
+      case 'shop-buy': {
+        this.village(p); const item=ITEMS[m.item];
+        if(!item || (item.classId&&item.classId!==p.rpg.classId))throw Error('請選擇適合職業的商品。');
+        if(p.rpg.inventory.includes(m.item))throw Error('已持有同款裝備。');
+        const price=shopBuyPrice(item); if(p.rpg.gold<price)throw Error('金幣不足。');
+        p.rpg.gold-=price; p.rpg.addItem(m.item); this.notice(p,'購入 '+item.name);this.events.push({to:p.id,type:'ui-sound',sound:'shop'}); return;
+      }
+      case 'shop-sell': {
+        this.village(p); const item=ITEMS[m.item];
+        if(!item||!p.rpg.inventory.includes(m.item)||this.locked(p,m.item)||Object.values(p.rpg.equipment).includes(m.item))throw Error('只能販賣未穿戴、未鎖定的裝備。');
+        if(item.starter)throw Error('免費新手武器不可販售。');
+        p.rpg.gold+=shopSellPrice(item,p.rpg.enhancements[m.item]||0);
+        p.rpg.inventory.splice(p.rpg.inventory.indexOf(m.item),1);delete p.rpg.enhancements[m.item];this.events.push({to:p.id,type:'ui-sound',sound:'shop'}); return;
+      }
+      case 'double-jump': {
+        if(p.rpg.classId!=='rogue'||p.rpg.hp<=0||p.y>=448||now<(p.dashUntil||0))return;
+        p.dashUntil=now+450; return;
+      }
       case 'forge': return this.forge.start(p, m.item, now);
       case 'casino-bet': case 'coin-create': case 'coin-join': case 'coin-cancel': return this.casino.command(p, m, now);
       case 'move': {
         if (p.rpg.hp <= 0 || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
         const dt = Math.min(0.25, Math.max(0.016, (now - p.moveAt) / 1000));
         const width = p.room === 'village' ? 1440 : 2880;
-        if (Math.abs(m.x - p.x) > 300 * dt + 24 || Math.abs(m.y - p.y) > 750 * dt + 30) {
+        if (Math.abs(m.x - p.x) > (now<(p.dashUntil||0)?650:300) * dt + 24 || Math.abs(m.y - p.y) > 900 * dt + 30) {
           p.teleport++; return;
         }
         p.x = Math.max(15, Math.min(width - 15, m.x));
@@ -164,7 +185,8 @@ export default class World {
         if (members.some(q => q.forge?.status === 'running')) throw new Error('請等待隊員強化完成。');
         if ([...this.trades.values()].some(t => party.members.includes(t.from) || party.members.includes(t.to))) throw new Error('請先完成或取消交易再出發。');
         const id = randomUUID();
-        this.instances.set(id, { id, mapId, partyId: party.id, drops: [], enemies: map.habitats.map((h, index) => { const kind = map.kinds[index % map.kinds.length]; return { id: randomUUID(), index, kind, x: h.x + h.width / 2, y: h.y - (kind === 'slime' ? 16 : 28), left: h.x + 26, right: h.x + h.width - 26, direction: 1, hp: MONSTERS[kind].hp, maxHp: MONSTERS[kind].hp, respawnAt: 0 }; }) });
+        const levels=members.map(q=>q.rpg.level), monsterLevel=Math.max(1,Math.round((Math.min(...levels)+Math.max(...levels))/2));
+        this.instances.set(id, { id, mapId, partyId: party.id, level:monsterLevel, projectiles:[], drops: [], enemies: map.habitats.map((h, index) => { const kind = map.kinds[index % map.kinds.length]; return { id: randomUUID(), index, kind, x: h.x + h.width / 2, y: h.y - (kind === 'slime' ? 16 : 28), left: h.x + 26, right: h.x + h.width - 26, direction: 1, ...scaledMonster(kind,monsterLevel), respawnAt: 0 }; }) });
         members.forEach((q, i) => { this.cancelPending(q.id); this.travel(q, id, i); }); return;
       }
       case 'dungeon-return': {
@@ -217,14 +239,24 @@ export default class World {
   }
   cast(p, skillId, now) {
     if (!Object.hasOwn(SKILLS, skillId)) return;
-    const skill = SKILLS[skillId];
-    if (!skill || p.room === 'village' || !p.rpg.cast(skillId, now)) return;
+    const skill = p.rpg.skills[skillId];
+    if (!skill || skill.passive || p.room === 'village' || !p.rpg.cast(skillId, now)) return;
     const instance = this.instances.get(p.room);
     if (!instance) return;
+    if(skill.projectile) {
+      for(let i=0;i<(skill.count||1);i++)instance.projectiles.push({id:randomUUID(),owner:p.id,skillId,skill,x:p.x,y:p.y,origin:p.x,direction:p.flipX?-1:1,starts:now+i*120,hit:[]});
+      this.event(p.room,{type:'attack',player:p.id,skill:skillId,classId:p.rpg.classId,x:p.x,y:p.y,direction:p.flipX?-1:1,hits:[]}); return;
+    }
     const hits = [];
     for (const enemy of instance.enemies) {
-      if (enemy.hp <= 0 || !intersectsAttack(p, enemy, skill, skillId === 'spin')) continue;
+      if (enemy.hp <= 0 || !intersectsAttack(p, enemy, skill, !!skill.area || (p.rpg.classId==='warrior'&&skillId==='spin'))) continue;
+      this.hitEnemy(p,enemy,skillId,skill,instance,now,hits);
+    }
+    this.event(p.room, { type: 'attack', player: p.id, skill: skillId, classId:p.rpg.classId, x: p.x, y: p.y, direction: p.flipX ? -1 : 1, hits });
+  }
+  hitEnemy(p,enemy,skillId,skill,instance,now,hits) {
       const damage = Math.round(p.rpg.attack * p.rpg.multiplier(skillId));
+      if(skill.freeze)enemy.frozenUntil=now+skill.freeze;
       enemy.hp = Math.max(0, enemy.hp - damage);
       hits.push({ id: enemy.id, x: enemy.x, y: enemy.y, damage });
       if (!enemy.hp) {
@@ -233,29 +265,39 @@ export default class World {
         for (const q of this.players.values()) {
           if (!q.online || q.room !== p.room) continue;
           q.rpg.kills++;
-          if (q.rpg.gainExp(25 + enemy.index * 3)) this.notice(q, `升級！Lv.${q.rpg.level}，獲得 1 技能點。`);
-          if (q.rpg.kills === 5) { q.rpg.addItem('leaf'); q.rpg.gold += 80; this.notice(q, '草原初戰完成！獲得翠葉長劍與 80 金幣。'); }
+          if (q.rpg.gainExp(enemy.exp || 25 + enemy.index * 3)) this.notice(q, `升級！Lv.${q.rpg.level}，獲得 1 技能點。`);
+          if (q.rpg.kills === 5) { q.rpg.addItem(({warrior:'leaf',archer:'longbow',mage:'froststaff',rogue:'shadowclaw'})[q.rpg.classId]); q.rpg.gold += 80; this.notice(q, '草原初戰完成！獲得職業武器與 80 金幣。'); }
         }
-        instance.drops.push({ id: randomUUID(), x: enemy.x, y: enemy.y, gold: 12 + enemy.index * 2, potion: p.rpg.kills % 2 === 0, item: first ? 'iron' : MONSTERS[enemy.kind]?.loot || null });
+        instance.drops.push({ id: randomUUID(), x: enemy.x, y: enemy.y, gold: enemy.gold || 12 + enemy.index * 2, potion: p.rpg.kills % 2 === 0, item: first ? (p.rpg.classId==='warrior'?'iron':({archer:'longbow',mage:'froststaff',rogue:'shadowclaw'})[p.rpg.classId]) : randomInt(100)<(enemy.dropRate||25) ? (p.rpg.classId==='warrior'?MONSTERS[enemy.kind]?.loot:({archer:'longbow',mage:'froststaff',rogue:'shadowclaw'})[p.rpg.classId]) : null });
       }
-    }
-    this.event(p.room, { type: 'attack', player: p.id, skill: skillId, x: p.x, y: p.y, direction: p.flipX ? -1 : 1, hits });
   }
   tick(now = Date.now(), dt = 0.05) {
+    if(this.persistenceError)return;
     this.forge.tick(now); this.casino.tick(now);
     for (const [id, value] of this.invites) if (value.expires <= now) this.invites.delete(id);
     for (const [id, value] of this.trades) if (value.expires <= now) this.trades.delete(id);
     for (const instance of this.instances.values()) {
+      instance.projectiles ||= [];
+      for(const bolt of [...instance.projectiles]) {
+        if(now<bolt.starts)continue;
+        const old=bolt.x;bolt.x+=bolt.direction*bolt.skill.speed*dt;
+        const p=this.players.get(bolt.owner),hits=[];
+        if(!p||p.room!==instance.id){instance.projectiles.splice(instance.projectiles.indexOf(bolt),1);continue;}
+        const candidates=instance.enemies.filter(e=>e.hp>0&&!bolt.hit.includes(e.id)&&Math.abs(e.y-bolt.y)<bolt.skill.height/2&&e.x>=Math.min(old,bolt.x)-20&&e.x<=Math.max(old,bolt.x)+20).sort((a,b)=>Math.abs(a.x-old)-Math.abs(b.x-old));
+        for(const e of candidates){this.hitEnemy(p,e,bolt.skillId,bolt.skill,instance,now,hits);bolt.hit.push(e.id);if(!bolt.skill.pierce)break;}
+        if(hits.length)this.event(instance.id,{type:'projectile-hit',player:p.id,skill:bolt.skillId,x:bolt.x,y:bolt.y,hits});
+        if((hits.length&&!bolt.skill.pierce)||Math.abs(bolt.x-bolt.origin)>=bolt.skill.range)instance.projectiles.splice(instance.projectiles.indexOf(bolt),1);
+      }
       for (const e of instance.enemies) {
         if (!e.hp) { if (now >= e.respawnAt) { e.hp = e.maxHp; e.x = (e.left + e.right) / 2; } else continue; }
-        e.x += e.direction * (MONSTERS[e.kind]?.speed || 55) * dt;
+        e.x += (now<(e.frozenUntil||0)?0:1) * e.direction * (MONSTERS[e.kind]?.speed || 55) * dt;
         if (e.x >= e.right) { e.x = e.right; e.direction = -1; }
         if (e.x <= e.left) { e.x = e.left; e.direction = 1; }
       }
     }
     for (const p of this.players.values()) {
       if (!p.online) {
-        if (now - p.disconnectedAt > 86400000) { this.tokens.delete(p.token); this.players.delete(p.id); }
+        if (!p.account && now - p.disconnectedAt > 86400000) { this.tokens.delete(p.token); this.players.delete(p.id); }
         continue;
       }
       if (p.rpg.hp <= 0) {
@@ -269,7 +311,7 @@ export default class World {
       if (now >= p.hurtUntil) {
         const e = instance.enemies.find(e => e.hp > 0 && Math.abs(e.x - p.x) < 32 && Math.abs(e.y - p.y) < 34);
         if (e) {
-          const damage = p.rpg.damage(MONSTERS[e.kind]?.damage || 14);
+          const damage = p.rpg.damage(e.damage || MONSTERS[e.kind]?.damage || 14);
           p.hurtUntil = now + 1000;
           this.event(p.room, { type: 'hurt', player: p.id, x: p.x, y: p.y, damage });
           if (!p.rpg.hp) { p.reviveAt = now + 2000; this.notice(p, '你倒下了，2 秒後在副本入口復活。'); }
@@ -280,7 +322,7 @@ export default class World {
         if (Math.hypot(p.x - drop.x, p.y - drop.y) > 82) continue;
         // 先移除掉落物再給獎勵；同一 tick 的下一位玩家無法重複領取。
         instance.drops.splice(instance.drops.indexOf(drop), 1);
-        p.rpg.gold += drop.gold;
+        p.rpg.gold += drop.gold;this.events.push({to:p.id,type:'ui-sound',sound:'pickup'});
         if (drop.potion) p.rpg.potions++;
         if (drop.item) p.rpg.addItem(drop.item);
         this.notice(p, `拾取 ${drop.gold} 金幣${drop.item ? '、' + ITEMS[drop.item].name : ''}${drop.potion ? '、恢復藥水' : ''}。`);

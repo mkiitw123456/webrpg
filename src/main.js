@@ -1,7 +1,9 @@
+import { loginScreen } from './ui/AuthUI.js';
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene.js';
 import './style.css';
 
+await loginScreen();
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',

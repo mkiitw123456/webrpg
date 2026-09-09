@@ -14,6 +14,7 @@ export function adminHTTP(world, request, response) {
   const actual = Buffer.from(request.headers.authorization || '');
   const expected = Buffer.from(`Bearer ${key || ''}`);
   if (!key || key.length < 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected)) { reply(401, { error: '管理金鑰未設定或不正確。' }); return true; }
+  if(world.persistenceError){reply(503,{error:'存檔連線中斷，暫停修改。'});return true;}
   if (path === '/admin/players' && request.method === 'GET') {
     reply(200, [...world.players.values()].map(p => ({ id: p.id, name: p.name, online: p.online, gold: p.rpg.gold })));
   } else if (path === '/admin/gold' && request.method === 'POST') {

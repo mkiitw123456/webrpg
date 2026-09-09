@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import World from './World.js';
 import { adminHTTP } from './admin.js';
 
-export function attachHub(server, { world = new World(), origins = [] } = {}) {
+export function attachHub(server, { world = new World(), origins = [], accounts = null } = {}) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
   const clients = new Map();
   const httpClients = new Map();
@@ -25,7 +25,7 @@ export function attachHub(server, { world = new World(), origins = [] } = {}) {
   const http = (request, response, next = () => { response.writeHead(404); response.end(); }) => {
     if (adminHTTP(world, request, response)) return;
     const path = request.url?.split('?')[0];
-    if (!['/multiplayer/connect', '/multiplayer/sync', '/multiplayer/leave'].includes(path)) return next();
+    if (!['/multiplayer/connect', '/multiplayer/sync', '/multiplayer/leave', '/multiplayer/auth/login', '/multiplayer/auth/register'].includes(path)) return next();
     if (!originAllowed(request)) { response.writeHead(403); response.end(); return; }
     const origin = request.headers.origin;
     if (origin && origins.includes(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); }
@@ -36,13 +36,16 @@ export function attachHub(server, { world = new World(), origins = [] } = {}) {
     let body = '', tooLarge = false;
     request.on('data', chunk => { body += chunk; if (body.length > 16384) { tooLarge = true; response.writeHead(413); response.end(); request.destroy(); } });
     request.on('error', () => {});
-    request.on('end', () => {
+    request.on('end', async () => {
       if (tooLarge) return;
       response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store');
       try {
         const m = JSON.parse(body), now = Date.now();
+        if(path.startsWith('/multiplayer/auth/')) {if(!accounts)throw Error('帳號服務未啟動'); const result=await accounts.auth(path,m,request.socket.remoteAddress);response.end(JSON.stringify(result));return;}
         if (path === '/multiplayer/connect') {
-          const p = world.connect(typeof m.token === 'string' ? m.token : null, now);
+          let p;
+          try { p = accounts ? accounts.connect(m.token,now) : world.connect(typeof m.token === 'string' ? m.token : null, now); }
+          catch(error) { response.writeHead(401); response.end(JSON.stringify({error:error.message})); return; }
           httpClients.set(p.token, { p, last: now, queue: [] });
           response.end(JSON.stringify([{ type: 'welcome', id: p.id, token: p.token }, world.snapshot(p, now)])); return;
         }
@@ -77,13 +80,13 @@ export function attachHub(server, { world = new World(), origins = [] } = {}) {
         if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('訊息格式錯誤。');
         if (!player) {
           if (m.type !== 'hello') throw new Error('請先建立連線。');
-          player = world.connect(typeof m.token === 'string' ? m.token : null, now);
+          player = accounts ? accounts.connect(m.token,now) : world.connect(typeof m.token === 'string' ? m.token : null, now);
           clients.set(ws, player);
           clearTimeout(timeout);
           send(ws, { type: 'welcome', id: player.id, token: player.token });
           send(ws, world.snapshot(player, now));
         } else world.command(player, m, now);
-      } catch (error) { send(ws, { type: 'notice', text: error.message }); }
+      } catch (error) { send(ws, { type: player ? 'notice' : 'auth-error', text: error.message }); }
     });
     ws.on('close', () => {
       clearTimeout(timeout);

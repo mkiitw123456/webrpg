@@ -22,14 +22,14 @@ test('forge deducts once, locks gear, progresses and success changes stats; resu
   assert.throws(() => w.command(a,{type:'forge',item:'wood'},0));
   assert.throws(() => w.command(a,{type:'unequip',slot:'weapon'}));
   assert.throws(() => w.command(a,{type:'trade-offer',target:b.id,item:'wood'}));
-  for(let t=350;t<10000;t+=350) w.forge.tick(t);
+  for(let t=350;t<50000;t+=350) w.forge.tick(t);
   assert.equal(a.forge.status,'success'); assert.equal(a.rpg.attack,15);
   assert.equal(a.rpg.enhancements.wood,1); assert.equal(a.rpg.gold,975);
   w.forge.tick(20000); assert.equal(a.rpg.enhancements.wood,1);
 });
 test('forge failure retains enhancement, respects maximum, continues offline and transfers enhancement', () => {
   const {w,a,b} = setup(); a.rpg.addItem('crystal'); a.rpg.enhancements.crystal=1;
-  w.forge.rng = (min,max) => min < 8 ? min : max-1;
+  w.forge.rng = (min,max) => max===100?99:max-1;
   w.command(a,{type:'forge',item:'crystal'},0); w.disconnect(a);
   for(let t=350;t<10000;t+=350) w.forge.tick(t);
   assert.equal(a.forge.status,'failure'); assert.equal(a.rpg.enhancements.crystal,1);
@@ -37,7 +37,7 @@ test('forge failure retains enhancement, respects maximum, continues offline and
   w.connect(a.token); w.command(a,{type:'trade-offer',target:b.id,item:'crystal'});
   const t=[...w.trades.values()][0]; w.command(b,{type:'trade-answer',id:t.id,accept:true});
   assert.equal(b.rpg.enhancements.crystal,1); assert.equal(a.rpg.enhancements.crystal,undefined);
-  b.rpg.enhancements.crystal=10; assert.throws(() => w.command(b,{type:'forge',item:'crystal'}));
+  b.rpg.enhancements.crystal=15; assert.throws(() => w.command(b,{type:'forge',item:'crystal'}));
 });
 test('roulette has fifteen slots, inclusive payouts, minute cadence, cutoff and no duplicate settlement', () => {
   for(let slot=0;slot<15;slot++) {

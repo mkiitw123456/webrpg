@@ -41,7 +41,7 @@ test('village is safe, party members travel together, different parties have iso
   world.command(a, { type: 'cast', skill: 'wave' }, now + 1800);
   assert.equal(world.instances.get(a.room).enemies[0].hp, 0);
   assert.equal(world.instances.get(c.room).enemies[0].hp, 36);
-  assert.equal(a.rpg.exp, 25); assert.equal(b.rpg.exp, 25); assert.equal(c.rpg.exp, 0);
+  assert.equal(a.rpg.exp, world.instances.get(a.room).enemies[0].exp); assert.equal(b.rpg.exp, world.instances.get(a.room).enemies[0].exp); assert.equal(c.rpg.exp, 0);
   assert.equal(world.instances.get(a.room).drops.length, 1);
   assert.equal(world.instances.get(c.room).drops.length, 0);
   // 同一戰利品同時進入兩個玩家拾取範圍，只能給一份。

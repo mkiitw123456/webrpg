@@ -19,7 +19,8 @@ test('forge growth lasts 350ms then pauses 500ms before another roll; one of ten
 });
 function riskRun(level, save) {
   const w=new World(),p=w.connect();p.rpg.gold=100000;p.rpg.enhancements.wood=level;
-  w.forge.rng=(min,max)=>{
+  let draw=0;w.forge.rng=(min,max)=>{
+    if(max===100)return draw++===0?99:save?99:0;
     if(max===10)return 9;
     if(p.forge?.phase==='risk')return min===8?(save?max-1:min):(save?min:max-1);
     return min===p.forge?.rules.successMin?min:max-1;
@@ -29,10 +30,10 @@ function riskRun(level, save) {
   for(let now=0;now<40000;now+=50){w.forge.tick(now);if(p.forge.phase==='risk')sawRisk=true;}
   return {w,p,sawRisk};
 }
-test('+6 failure has no destruction round; +7 can preserve equipment or destroy it', () => {
-  const safe=riskRun(6,false);assert.equal(safe.sawRisk,false);assert.equal(safe.p.forge.status,'failure');
-  const kept=riskRun(7,true);assert.equal(kept.sawRisk,true);assert.equal(kept.p.forge.status,'failure');assert.equal(kept.p.rpg.enhancements.wood,7);
-  const broken=riskRun(7,false);assert.equal(broken.p.forge.status,'destroyed');
+test('target +6 is safe; target +7 can preserve equipment or destroy it', () => {
+  const safe=riskRun(5,false);assert.equal(safe.sawRisk,false);assert.equal(safe.p.forge.status,'failure');
+  const kept=riskRun(6,true);assert.equal(kept.sawRisk,true);assert.equal(kept.p.forge.status,'failure');assert.equal(kept.p.rpg.enhancements.wood,6);
+  const broken=riskRun(6,false);assert.equal(broken.p.forge.status,'destroyed');
   assert.equal(broken.p.rpg.inventory.includes('wood'),false);assert.equal(broken.p.rpg.equipment.weapon,null);assert.equal(broken.p.rpg.enhancements.wood,undefined);assert.equal(broken.p.rpg.attack,12);
   const gold=broken.p.rpg.gold;broken.w.forge.tick(50000);assert.equal(broken.p.rpg.gold,gold);
   broken.p.rpg.addItem('wood');broken.p.rpg.equip('wood');assert.equal(broken.p.rpg.attack,12);
