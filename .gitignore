@@ -3,4 +3,5 @@ dist/
 .vercel/
 .env*
 !.env.example
+!.env.production
 *.log
