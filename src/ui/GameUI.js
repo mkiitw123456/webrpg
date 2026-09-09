@@ -142,7 +142,7 @@ export default class GameUI {
   }
   skills() {
     const s = this.scene.rpg;
-    return `<p class="panel-hint">可用技能點 <b>${s.skillPoints}</b> · 每次升級 +1 點</p><div class="item-list">${Object.entries(this.scene.rpg.skills).map(([id, k]) => `<div class="item-row"><kbd data-key="${id}"></kbd><div><strong>${k.name} ${id === 'attack' ? '' : `Lv.${s.ranks[id]} / 5`}</strong><small>${k.passive?'空中再按一次跳躍，向面向方向衝刺；落地重置':Math.round(s.multiplier(id)*100)+'% 傷害 · '+k.mp+' MP · '+k.cooldown/1000+'s 冷卻'}</small></div>${id !== 'attack' && !k.passive ? `<button data-upgrade="${id}" ${!s.skillPoints || s.ranks[id] >= 5 ? 'disabled' : ''}>升級 +1</button>` : ''}</div>`).join('')}</div>`;
+    return `<p class="panel-hint">可用技能點 <b>${s.skillPoints}</b> · 每次升級 +1 點</p><div class="item-list">${Object.entries(this.scene.rpg.skills).map(([id, k]) => `<div class="item-row"><kbd data-key="${id}"></kbd><div><strong>${k.name} ${id === 'attack' || k.passive ? '' : `Lv.${s.ranks[id]} / 5`}</strong><small>${k.passive?'空中再按一次跳躍，向面向方向衝刺；落地重置':Math.round(s.multiplier(id)*100)+'% 傷害 · '+k.mp+' MP · '+k.cooldown/1000+'s 冷卻'}</small></div>${id !== 'attack' && !k.passive ? `<button data-upgrade="${id}" ${!s.skillPoints || s.ranks[id] >= 5 ? 'disabled' : ''}>升級 +1</button>` : ''}</div>`).join('')}</div>`;
   }
   shop() {
     const s=this.scene.rpg;if(this.scene.room!=='village')return '<p>請回村莊交易。</p>';
@@ -173,7 +173,7 @@ export default class GameUI {
       ${this.scene.room !== 'village' ? '<p class="panel-hint">請回村莊進行交易。</p>' : ''}`;
   }
   settings() {
-    return `<button data-logout>登出帳號</button><label>背景音樂音量<input id="music-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.musicVolume*100)}"></label><a href="/audio/CREDITS.md" target="_blank" rel="noopener">音樂與音效來源（CC0）</a><p class="panel-hint">點擊按鍵後按下新鍵。重複按鍵會提示衝突，Esc 固定為關閉／取消。設定會保留在此瀏覽器。</p><div id="binding-message" role="status"></div><div class="binding-grid">${Object.keys(ACTION_NAMES).map(id => `<div><span>${ACTION_NAMES[id]}</span><button data-bind="${id}">${this.scene.controls.label(id)}</button></div>`).join('')}</div><button class="primary-button" data-reset-keys>恢復預設按鍵</button><div class="sound-setting"><label for="sound-volume">音效音量 <b id="volume-value">${Math.round(this.scene.audio.volume * 100)}%</b></label><input id="sound-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.volume * 100)}"><button data-test-audio>試聽打擊音效</button><p>包含攻擊命中、輪盤啟動與結算；受傷不播放音效。設為 0% 即靜音。</p></div>`;
+    return `<button data-logout>登出帳號</button><label>背景音樂音量<input id="music-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.musicVolume*100)}"></label><a href="/audio/CREDITS.md" target="_blank" rel="noopener">音樂與音效來源（CC0）</a><p class="panel-hint">點擊按鍵後按下新鍵。重複按鍵會提示衝突，Esc 固定為關閉／取消。設定會保留在此瀏覽器。</p><div id="binding-message" role="status"></div><div class="binding-grid">${Object.keys(ACTION_NAMES).map(id => `<div><span>${this.scene.rpg.skills[id]?.name || ACTION_NAMES[id]}</span><button data-bind="${id}">${this.scene.controls.label(id)}</button></div>`).join('')}</div><button class="primary-button" data-reset-keys>恢復預設按鍵</button><div class="sound-setting"><label for="sound-volume">音效音量 <b id="volume-value">${Math.round(this.scene.audio.volume * 100)}%</b></label><input id="sound-volume" type="range" min="0" max="100" value="${Math.round(this.scene.audio.volume * 100)}"><button data-test-audio>試聽打擊音效</button><p>包含攻擊命中、強化、交易、輪盤啟動與結算；受傷不播放音效。設為 0% 即靜音。</p></div>`;
   }
   update(now) {
     updateWorkshop(this, now);
@@ -185,7 +185,7 @@ export default class GameUI {
       this.root.querySelector(`.${key} i`).style.width = `${100 * value / max}%`;
       set(`.${key} span`, `${key.toUpperCase()} ${Math.floor(value)} / ${max}`);
     }
-    set('#gold', `${s.gold} 金幣`); set('#quest', s.kills >= 5 ? '草原初戰完成 · 翠葉長劍已獲得' : `草原初戰 ${s.kills} / 5`);
+    set('#gold', `${s.gold} 金幣`); set('#quest', s.kills >= 5 ? '草原初戰完成 · 職業武器已獲得' : `草原初戰 ${s.kills} / 5`);
     set('#potions', `剩餘 ${s.potions} 瓶`);
     set('#party-status', data?.party ? `隊伍 ${data.party.members.length} / 4 · ${this.scene.room === 'village' ? '村莊待命' : '專屬副本'}` : `村莊旅人 ${(data?.peers.length || 0) + 1} 人`);
     const invitations = data?.invites.filter(i => i.to === data.self.id).length || 0;

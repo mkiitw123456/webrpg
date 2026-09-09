@@ -16,7 +16,7 @@ export default class GameClient {
       this.token = message.token; this.id = message.id;
       try { sessionStorage.setItem('little-leaf-session', this.token); } catch { /* Storage optional. */ }
     }
-    if (message.type === 'state') { this.connected = true; this.offset = message.now - Date.now(); clearTimeout(this.fallbackTimer); }
+    if (message.type === 'state') { if(!this.connected)this.onStatus('已連上小葉村。按組隊建立隊伍，或等待朋友加入。');this.connected = true; this.offset = message.now - Date.now(); clearTimeout(this.fallbackTimer); }
     this.onMessage(message);
   }
   connect() {
