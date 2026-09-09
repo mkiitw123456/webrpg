@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { horizontalVelocity, doubleJumpVelocity } from '../shared/movement.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -7,7 +8,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
     this.setScale(3).setDepth(5).setCollideWorldBounds(true);
     this.body.setSize(10, 17).setOffset(3, 1);
-    this.setMaxVelocity(250, 700).setDragX(1800);
+    this.setMaxVelocity(560, 700).setDragX(0);
     this.controls = scene.controls;
     this.lastGrounded = -Infinity;
     this.jumpQueued = -Infinity;
@@ -21,13 +22,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     if (grounded) {this.lastGrounded = time;this.airJumpUsed=false;}
     if (this.controls.just('jump')) {
       if(!grounded && time-this.lastGrounded>=100 && !this.airJumpUsed && this.scene.rpg.classId==='rogue') {
-        this.airJumpUsed=true; this.setMaxVelocity(500,700);this.setVelocity(this.flipX?-460:460,-330);this.dashUntil=time+250;
+        this.airJumpUsed=true;this.setVelocity(doubleJumpVelocity(this.body.velocity.x,this.flipX?-1:1),Math.min(this.body.velocity.y,-330));
+        this.jumpQueued=-Infinity;
         this.scene.client.send('double-jump');this.scene.audio.hit('wave');
       } else this.jumpQueued=time;
     }
     const direction = Number(this.controls.down('right')) - Number(this.controls.down('left'));
-    this.setAccelerationX(time<(this.dashUntil||0)?0:direction*1800);
-    if(time>=(this.dashUntil||0))this.setMaxVelocity(250,700);
+    this.setAccelerationX(0);
+    this.setVelocityX(horizontalVelocity(this.body.velocity.x,direction,grounded,Math.min(this.scene.game.loop.delta / 1000,0.05)));
     if (direction) this.setFlipX(direction < 0);
 
     if (time - this.jumpQueued < 120 && time - this.lastGrounded < 100) {

@@ -25,13 +25,12 @@ export default class Accounts {
     const w=this.world;
     for(const saved of data.players||[]){const rpg=Object.assign(new RPGState(saved.rpg.classId),saved.rpg);const p={...saved,rpg,online:false,token:randomBytes(24).toString('hex'),partyId:null,room:'village',x:140,y:449,flipX:false,moving:false,hurtUntil:0,reviveAt:0,disconnectedAt:Date.now()};w.players.set(p.id,p);}
     if(data.casino){const {roulette,pool,rooms,history}=data.casino;if(roulette)w.casino.roulette=roulette;if(pool)w.casino.pool=pool;w.casino.history=history||[];w.casino.rooms=new Map(rooms||[]);}
-    w.forge.results=new Map(data.forgeResults||[]);
     // Unmatched reservations are refunded on restart, matched rounds resume.
     for(const p of w.players.values())w.casino.disconnect(p);
   }
   checkpoint() {
     const w=this.world;
-    return {players:[...w.players.values()].filter(p=>p.account).map(p=>({id:p.id,account:true,name:p.name,rpg:p.rpg,forge:p.forge,teleport:0})),forgeResults:[...w.forge.results],casino:{roulette:w.casino.roulette.bets.length?w.casino.roulette:null,pool:w.casino.pool.bets.length?w.casino.pool:null,rooms:[...w.casino.rooms],history:w.casino.history}};
+    return {players:[...w.players.values()].filter(p=>p.account).map(p=>({id:p.id,account:true,name:p.name,rpg:p.rpg,forge:p.forge,teleport:0})),casino:{roulette:w.casino.roulette.bets.length?w.casino.roulette:null,pool:w.casino.pool.bets.length?w.casino.pool:null,rooms:[...w.casino.rooms],history:w.casino.history}};
   }
   serialize(fn) {const next=this.queue.then(fn);this.queue=next.catch(()=>{});return next;}
   save() {return this.serialize(async()=>{

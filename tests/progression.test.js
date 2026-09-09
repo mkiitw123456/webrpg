@@ -10,10 +10,10 @@ function setup(rng = min => min) {
   const a = w.connect(), b = w.connect(); a.rpg.gold = b.rpg.gold = 1000;
   return { w, a, b };
 }
-test('forge costs increase, rare equipment has slower success and faster failure', () => {
+test('forge costs increase with tier and enhancement while target odds apply to every item', () => {
   for (const item of Object.values(ITEMS)) for (let n = 0; n < 9; n++) assert.ok(forgeRules(item,n+1).cost > forgeRules(item,n).cost);
   const common = forgeRules(ITEMS.wood), rare = forgeRules(ITEMS.crystal);
-  assert.ok(rare.successMax < common.successMax && rare.failureMin > common.failureMin);
+  assert.ok(rare.cost>common.cost);assert.equal(rare.successRate,common.successRate);
 });
 test('forge deducts once, locks gear, progresses and success changes stats; result is not replayed', () => {
   const {w,a,b} = setup(); w.forge.rng = (min,max) => min >= 10 ? max-1 : min;
@@ -29,7 +29,7 @@ test('forge deducts once, locks gear, progresses and success changes stats; resu
 });
 test('forge failure retains enhancement, respects maximum, continues offline and transfers enhancement', () => {
   const {w,a,b} = setup(); a.rpg.addItem('crystal'); a.rpg.enhancements.crystal=1;
-  w.forge.rng = (min,max) => max===100?99:max-1;
+  let draw=0;w.forge.rng = (min,max) => draw++%3===0?min:max-1;
   w.command(a,{type:'forge',item:'crystal'},0); w.disconnect(a);
   for(let t=350;t<10000;t+=350) w.forge.tick(t);
   assert.equal(a.forge.status,'failure'); assert.equal(a.rpg.enhancements.crystal,1);

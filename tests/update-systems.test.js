@@ -26,25 +26,6 @@ test('accounts reject case-folded duplicates, persist progress, and allow anothe
   next.tick(Date.now());assert.equal(restored.rpg.hp,restored.rpg.maxHp,'dead characters revive after loading a checkpoint');
  }finally{await a?.close();await rm(dir,{recursive:true,force:true});}
 });
-test('all 15 enhancement probabilities follow exact integer draw boundaries and finish once',()=>{
- for(let level=0;level<15;level++){
-  let successes=0;
-  for(let roll=0;roll<100;roll++){
-   const w=new World(),p=w.connect();p.rpg.gold=1e9;p.rpg.enhancements.wood=level;let draw=0;
-   w.forge.rng=(min,max)=>max===100?(draw++===0?roll:99):Math.floor((min+max-1)/2);
-   w.forge.start(p,'wood',0);for(let t=0;t<90000&&p.forge.status==='running';t+=350)w.forge.tick(t);
-   assert.notEqual(p.forge.status,'running');if(p.forge.status==='success')successes++;
-  }
-  assert.equal(successes,FORGE_SUCCESS[level]);
-  let destroyed=0;
-  if(FORGE_DESTROY[level])for(let roll=0;roll<100;roll++){
-   const w=new World(),p=w.connect();p.rpg.gold=1e9;p.rpg.enhancements.wood=level;let draw=0;
-   w.forge.rng=(min,max)=>max===100?(draw++===0?99:roll):Math.floor((min+max-1)/2);
-   w.forge.start(p,'wood',0);for(let t=0;t<90000&&p.forge.status==='running';t+=350)w.forge.tick(t);if(p.forge.status==='destroyed')destroyed++;
-  }
-  assert.equal(destroyed,FORGE_DESTROY[level]);
- }
-});
 function enter(w,p){w.command(p,{type:'party-create'});w.command(p,{type:'dungeon-enter'});return w.instances.get(p.room);}
 test('monsters scale from party extrema and rewards grow; shop prevents free gold and locked sales',()=>{
  const w=new World(),p=w.connect(),q=w.connect();p.rpg.level=10;q.rpg.level=20;

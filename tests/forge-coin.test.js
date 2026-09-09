@@ -20,10 +20,9 @@ test('forge growth lasts 350ms then pauses 500ms before another roll; one of ten
 function riskRun(level, save) {
   const w=new World(),p=w.connect();p.rpg.gold=100000;p.rpg.enhancements.wood=level;
   let draw=0;w.forge.rng=(min,max)=>{
-    if(max===100)return draw++===0?99:save?99:0;
-    if(max===10)return 9;
-    if(p.forge?.phase==='risk')return min===8?(save?max-1:min):(save?min:max-1);
-    return min===p.forge?.rules.successMin?min:max-1;
+    const part=draw++%3;if(part===1)return 9;
+    const topWins=p.forge?.phase==='risk'&&save;
+    return (part===0)===topWins?max-1:min;
   };
   w.command(p,{type:'forge',item:'wood'},0);
   let sawRisk=false;

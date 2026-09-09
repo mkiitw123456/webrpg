@@ -1,9 +1,10 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { ITEMS } from '../src/systems/RPGState.js';
 import { forgeRules } from '../src/shared/progression.js';
+import { raceIncrement, advanceRace } from '../src/shared/forgeRace.js';
 
 export default class Forge {
-  constructor(world, rng = randomInt) { this.world = world; this.rng = rng; this.results = new Map(); }
+  constructor(world, rng = randomInt) { this.world = world; this.rng = rng; }
   start(p, item, now) {
     this.world.village(p);
     if (p.forge?.status === 'running') throw new Error('正在強化中，請等待結果。');
@@ -11,13 +12,12 @@ export default class Forge {
     const level = p.rpg.enhancements[item] || 0, rules = forgeRules(ITEMS[item], level);
     if (level >= 15) throw new Error('裝備已達 +15 上限。');
     if (p.rpg.gold < rules.cost) throw new Error(`金幣不足，需要 ${rules.cost} 金幣。`);
-    this.results.set(p.id, {success:this.rng(0,100)<rules.successRate, destroyed:this.rng(0,100)<rules.destroyRate});
     p.rpg.gold -= rules.cost;
-    p.forge = { id: randomUUID(), item, level, cost: rules.cost, rules, phase: 'upgrade', success: 0, failure: 0, segments: [], status: 'running', nextTick: now };
+    p.forge = { id: randomUUID(), raceVersion:2, item, level, cost: rules.cost, rules, phase: 'upgrade', success: 0, failure: 0, segments: [], status: 'running', nextTick: now };
   }
   finish(p, status) {
     const f = p.forge;
-    f.status = status; this.results.delete(p.id);
+    f.status = status;
     if (status === 'success') p.rpg.enhancements[f.item] = f.level + 1;
     if (status === 'destroyed') {
       p.rpg.inventory = p.rpg.inventory.filter(id => id !== f.item);
@@ -30,6 +30,9 @@ export default class Forge {
     for (const p of this.world.players.values()) {
       const f = p.forge;
       if (!f || f.status !== 'running') continue;
+      // Upgrade an interrupted legacy animation without charging again or
+      // carrying its artificially capped progress into the new race.
+      if(f.raceVersion!==2)Object.assign(f,{raceVersion:2,success:0,failure:0,segments:[],step:null,nextTick:now});
       // The authoritative result commits only after the visible growth finishes.
       if (f.step?.outcome && now >= f.step.ends) {
         const won = f.step.outcome === 'top'; f.step.outcome = null;
@@ -43,20 +46,12 @@ export default class Forge {
         f.phase = 'risk'; f.pendingRisk = false; f.success = 0; f.failure = 0; f.segments = [];
       }
       const risk = f.phase === 'risk';
-      const base = this.rng(risk ? 8 : f.rules.successMin, risk ? 23 : f.rules.successMax + 1);
-      const boosted = !risk && this.rng(0, 10) === 0;
-      let a = base * (boosted ? 2 : 1), b = this.rng(risk ? 5 : f.rules.failureMin, risk ? 19 : f.rules.failureMax + 1);
-      const result=this.results.get(p.id), topWinner=risk?!result.destroyed:result.success;
-      // The losing bar stays below the finish line; RNG outcome sets exact odds.
-      if(topWinner)b=Math.min(b,Math.max(0,(96-f.failure)*0.55));
-      else a=Math.min(a,Math.max(0,(96-f.success)*0.55));
-      const topTime = a ? (100 - f.success) / a : Infinity, bottomTime = b ? (100 - f.failure) / b : Infinity;
-      const fraction = Math.min(1, topTime, bottomTime), fromSuccess = f.success, fromFailure = f.failure;
-      f.success = Math.min(100, f.success + a * fraction); f.failure = Math.min(100, f.failure + b * fraction);
-      const crossed = topTime <= 1 || bottomTime <= 1;
-      const topWins = crossed && (topTime === bottomTime ? this.rng(0, 2) === 0 : topTime < bottomTime);
+      const {base,boosted,success:a,failure:b}=raceIncrement(f.rules,risk,this.rng);
+      const fromSuccess=f.success,fromFailure=f.failure;
+      const next=advanceRace(fromSuccess,fromFailure,a,b);
+      f.success=next.success;f.failure=next.failure;
       f.segments.push({ from: fromSuccess, to: f.success, boosted });
-      f.step = { starts: now, ends: now + 350, fromSuccess, fromFailure, base, boosted, outcome: crossed ? topWins ? 'top' : 'bottom' : null };
+      f.step = { starts: now, ends: now + 350, fromSuccess, fromFailure, base, boosted, outcome:next.outcome };
       f.nextTick = now + 850; // 350ms growth + 500ms pause, including the final risk handoff.
     }
   }

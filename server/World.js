@@ -107,7 +107,7 @@ export default class World {
       }
       case 'double-jump': {
         if(p.rpg.classId!=='rogue'||p.rpg.hp<=0||p.y>=448||now<(p.dashUntil||0))return;
-        p.dashUntil=now+450; return;
+        p.dashUntil=now+1800; return;
       }
       case 'forge': return this.forge.start(p, m.item, now);
       case 'casino-bet': case 'coin-create': case 'coin-join': case 'coin-cancel': return this.casino.command(p, m, now);
@@ -120,6 +120,7 @@ export default class World {
         }
         p.x = Math.max(15, Math.min(width - 15, m.x));
         p.y = Math.max(30, Math.min(449, m.y));
+        if(p.y>=448)p.dashUntil=0;
         p.flipX = !!m.flipX; p.moving = !!m.moving; p.moveAt = now;
         return;
       }
