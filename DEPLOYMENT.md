@@ -8,6 +8,18 @@
 
 ## 2. 多人後端
 
+### 目前專案的 Render 免費測試設定
+
+根目錄的 render.yaml 已設定單一免費 Docker Web Service，允許 https://webrpg-lyart.vercel.app 連線。
+
+1. 登入 Render，新增 Blueprint，連接 GitHub 的 mkiitw123456/webrpg 儲存庫及 main 分支。
+2. 檢查服務方案為 Free，再部署。
+3. 等狀態成為 Live，複製 Render 實際分配的 HTTPS 網址；不要自行猜測網域。
+4. 到 Vercel 的 webrpg 專案 → Settings → Environment Variables，新增 Production 變數 VITE_GAME_SERVER，值為 wss://實際後端網域/multiplayer。
+5. 重新部署 Vercel，進入正式站確認顯示「已連線」。
+
+免費服務會在閒置後休眠，喚醒需要等待；目前遊戲資料存在記憶體，服務重啟會清空進度。正式營運需另處理持久化及常駐資源。
+
 可在支援常駐 Node.js 或 Docker 的主機上部署此儲存庫。
 
 - Node.js：22.12 以上，建議 22 LTS。

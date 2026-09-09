@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: webrpg-server
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://webrpg-lyart.vercel.app
