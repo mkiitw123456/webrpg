@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小葉物語 · 本機金幣管理</title>
+<style>body{font:16px system-ui;background:#14261f;color:#ecf3df;max-width:960px;margin:40px auto;padding:24px}h1{color:#c5e39b}label{display:block;margin:16px 0}input,button{font:inherit;padding:10px;border-radius:6px;border:1px solid #72876a}input{background:#f4f3e5;max-width:100%;box-sizing:border-box}#server,#token{width:100%}button{background:#c5e39b;cursor:pointer}table{width:100%;border-collapse:collapse}td,th{padding:12px;text-align:left;border-bottom:1px solid #546557}small{display:block;overflow-wrap:anywhere;color:#acc2b0}td input{width:150px}#status{min-height:30px;color:#ffda9c}p{line-height:1.7}</style>
+<h1>小葉物語 · 金幣管理</h1>
+<p>僅供管理者使用。輸入管理金鑰後讀取玩家，修改的是後端真正餘額。此頁不保存金鑰；關閉頁面後需重新輸入。伺服器重啟仍會清空遊戲進度。</p>
+<label>後端網址<input id="server" value="https://webrpg-server.onrender.com" type="url"></label>
+<label>管理金鑰 ADMIN_TOKEN<input id="token" type="password" autocomplete="off" placeholder="填入 Render 後端的 ADMIN_TOKEN"></label>
+<button id="refresh">連線／重新整理玩家</button> <label><input id="auto" type="checkbox"> 每 5 秒更新餘額（編輯金額時暫停）</label>
+<p id="status" role="status">尚未連線</p>
+<table><thead><tr><th>玩家與 ID</th><th>目前金幣</th><th>設定新餘額</th></tr></thead><tbody id="players"></tbody></table>
+<script type="module">
+const $ = id => document.getElementById(id); let busy = false;
+async function api(path, data) {
+  const url = new URL($('server').value);
+  if (url.protocol !== 'https:' && !['localhost','127.0.0.1'].includes(url.hostname)) throw Error('遠端後端必須使用 HTTPS。');
+  if ($('token').value.length < 32) throw Error('請輸入至少 32 字元的管理金鑰。');
+  const res = await fetch(url.origin + path, { method: data ? 'POST' : 'GET', headers: {Authorization: 'Bearer ' + $('token').value, ...(data ? {'Content-Type':'application/json'} : {})}, ...(data ? {body:JSON.stringify(data)} : {}), signal:AbortSignal.timeout(15000)});
+  const value = await res.json(); if (!res.ok) throw Error(value.error || '連線失敗'); return value;
+}
+async function refresh() {
+  if (busy) return; busy = true;
+  try {
+    const players = await api('/admin/players'); $('players').replaceChildren();
+    for (const p of players) {
+      const tr = document.createElement('tr'), name = tr.insertCell(), balance = tr.insertCell(), edit = tr.insertCell();
+      name.textContent = p.name + (p.online ? ' · 在線' : ' · 離線'); const id = document.createElement('small'); id.textContent = p.id; name.append(id); balance.textContent = p.gold.toLocaleString();
+      const input = document.createElement('input'); input.type='number'; input.min='0'; input.max='1000000000'; input.step='1'; input.value=p.gold; input.setAttribute('aria-label',p.name+'的新金幣');
+      const button = document.createElement('button'); button.textContent='套用'; button.onclick = async () => {
+        if (busy) return; const gold=Number(input.value); if (!input.value || !Number.isSafeInteger(gold) || gold<0 || gold>1e9) { $('status').textContent='請填入有效整數。'; return; }
+        busy=true; button.disabled=true;
+        try { await api('/admin/gold',{id:p.id,gold,previousGold:p.gold}); $('status').textContent=`已將 ${p.name} 的金幣設為 ${gold.toLocaleString()}，遊戲會同步更新。`; p.gold=gold; balance.textContent=gold.toLocaleString(); }
+        catch(e){$('status').textContent=e.message;} finally{busy=false;button.disabled=false;}
+      }; edit.append(input,button);
+      $('players').append(tr);
+    }
+    $('status').textContent=`已讀取 ${players.length} 位玩家 · ${new Date().toLocaleTimeString()}。請用完整 ID 確認角色。`;
+  } catch(e){$('status').textContent=e.message+'（免費後端喚醒可能需要稍候再試）';} finally{busy=false;}
+}
+$('refresh').onclick=refresh;
+setInterval(()=>{if($('auto').checked && !document.activeElement.closest('tbody'))refresh();},5000);
+</script></html>

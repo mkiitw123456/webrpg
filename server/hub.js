@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import World from './World.js';
+import { adminHTTP } from './admin.js';
 
 export function attachHub(server, { world = new World(), origins = [] } = {}) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
@@ -22,6 +23,7 @@ export function attachHub(server, { world = new World(), origins = [] } = {}) {
   };
   server.on('upgrade', upgrade);
   const http = (request, response, next = () => { response.writeHead(404); response.end(); }) => {
+    if (adminHTTP(world, request, response)) return;
     const path = request.url?.split('?')[0];
     if (!['/multiplayer/connect', '/multiplayer/sync', '/multiplayer/leave'].includes(path)) return next();
     if (!originAllowed(request)) { response.writeHead(403); response.end(); return; }
